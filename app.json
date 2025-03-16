@@ -4,7 +4,7 @@
     "slug": "snack-ab4af9ad-7d85-4775-9d7f-00c55fa352a6",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/icons.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
@@ -19,10 +19,21 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "package": "com.mohit229.snackab4af9ad7d8547759d7f00c55fa352a6"
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "07551ee2-51d6-45bb-9688-d18692c39b56"
+      }
+    },
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "exclude": ["@react-native-community/checkbox"]
+      }
     }
   }
 }
