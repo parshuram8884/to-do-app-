@@ -30,5 +30,7 @@
   "devDependencies": {
     "@babel/core": "^7.20.0"
   },
-  "private": true
+  "private": true,
+  "name": "to-do-by-mohit-thakur",
+  "version": "1.0.0"
 }

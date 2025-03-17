@@ -2,100 +2,209 @@ import * as Notifications from "expo-notifications";
 import { Alert, Platform, Linking } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-// Check current notification permission status
+// Configure notification behavior with alarm sound and custom channel
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+    priority: Notifications.AndroidNotificationPriority.HIGH,
+    sound: 'alarm',
+    vibrate: [0, 250, 250, 250],
+  }),
+});
+
+// Create a high-priority notification channel for Android
+if (Platform.OS === 'android') {
+  Notifications.setNotificationChannelAsync('task-alarms', {
+    name: 'Task Alarms',
+    importance: Notifications.AndroidImportance.MAX,
+    sound: 'alarm',
+    enableVibrate: true,
+    vibrationPattern: [0, 250, 250, 250],
+    lockscreenVisibility: Notifications.AndroidNotificationLockscreenVisibility.PUBLIC,
+    bypassDnd: true, // Bypass Do Not Disturb
+    showBadge: true,
+    icon: '@drawable/notification_icon',
+  });
+}
+
 export async function checkNotificationPermission() {
   const { status } = await Notifications.getPermissionsAsync();
   return status;
 }
 
-// Request notification permissions with improved handling
 export async function requestPermissions() {
-  // First check current permission status
   let { status } = await Notifications.getPermissionsAsync();
   
-  // If not granted, request permission
   if (status !== "granted") {
     const { status: newStatus } = await Notifications.requestPermissionsAsync();
     status = newStatus;
   }
   
-  // Store the permission status
   await AsyncStorage.setItem("notificationsAllowed", status === "granted" ? "true" : "false");
-  
   return status === "granted";
 }
 
-// Check permissions on app start
 export async function checkPermissionsOnStart() {
   const status = await checkNotificationPermission();
-  const notificationsAllowed = status === "granted";
-  
-  // Update stored value to reflect current status
-  await AsyncStorage.setItem("notificationsAllowed", notificationsAllowed ? "true" : "false");
-  
-  return notificationsAllowed;
+  await AsyncStorage.setItem("notificationsAllowed", status === "granted" ? "true" : "false");
+  return status === "granted";
 }
 
-// Schedule multiple notifications at percentage-based intervals
 export async function scheduleNotification(task) {
-  // First check if notifications are allowed
   const notificationsAllowed = await AsyncStorage.getItem("notificationsAllowed");
   if (notificationsAllowed !== "true") {
-    console.warn("Notifications not allowed. Cannot schedule notifications.");
+    console.warn("Notifications not allowed");
     return false;
   }
-  
+
   const taskDueDate = new Date(task.dueDate);
   const now = new Date();
 
-  if (taskDueDate <= now) {
-    console.warn("Task due date has already passed.");
-    return false;
-  }
+  if (taskDueDate <= now) return false;
 
-  const timeDifference = taskDueDate - now; // Total time until the task is due
-
-  // Create a unique identifier for this task's notifications
+  const timeDifference = taskDueDate - now;
   const taskNotificationId = `task-${task.id}`;
   
-  // Intervals at which to send notifications (percentage of time until due date)
-  const percentageIntervals = [0.25, 0.5, 0.75, 0.9, 0.95, 1.0]; // 25%, 50%, 75%, 90%, 95%, 100%
-
-  // First cancel any existing notifications for this task
   await cancelTaskNotifications(taskNotificationId);
 
-  const scheduledNotifications = [];
+  const intervals = [
+    { percent: 0.25, title: "Task Reminder", body: `"${task.title}" is due in 75% of time` },
+    { percent: 0.5, title: "Task Reminder", body: `"${task.title}" is due in 50% of time` },
+    { percent: 0.75, title: "Task Reminder", body: `"${task.title}" is due in 25% of time` },
+    { percent: 0.85, title: "Task Almost Due", body: `"${task.title}" is due in 15% of time remaining` },
+    { percent: 0.95, title: "Task Due Very Soon!", body: `"${task.title}" is due in 5% of time remaining!` },
+    { percent: 1.0, title: "⚠️ Task Due Now!", body: `"${task.title}" is due now!` }
+  ];
 
-  for (const percent of percentageIntervals) {
-    const triggerTime = new Date(now.getTime() + timeDifference * percent);
+  const scheduledIds = [];
 
-    // Only schedule if the trigger time is in the future
+  for (const interval of intervals) {
+    const triggerTime = new Date(now.getTime() + timeDifference * interval.percent);
+    
     if (triggerTime > now) {
       try {
-        const identifier = await Notifications.scheduleNotificationAsync({
+        const id = await Notifications.scheduleNotificationAsync({
           content: {
-            title: percent === 1.0 ? "Task Due Now!" : "Task Reminder",
-            body: percent === 1.0
-              ? `Your task "${task.title}" is due now!`
-              : `Your task "${task.title}" is due in ${formatTimeRemaining(triggerTime, now)}!`,
-            sound: true,
-            data: { taskId: task.id, notificationGroup: taskNotificationId },
+            title: interval.title,
+            body: interval.body,
+            sound: 'alarm',
+            priority: Notifications.AndroidNotificationPriority.HIGH,
+            channelId: 'task-alarms',
+            icon: '@drawable/notification_icon',
+            data: { 
+              taskId: task.id, 
+              type: 'task', 
+              dueDate: taskDueDate.toISOString(),
+              title: task.title
+            },
+            android: {
+              channelId: 'task-alarms',
+              smallIcon: '@drawable/notification_icon',
+              priority: Notifications.AndroidNotificationPriority.MAX,
+              sound: 'alarm',
+            }
           },
-          trigger: { date: triggerTime },
+          trigger: { 
+            date: triggerTime,
+          },
         });
+        scheduledIds.push(id);
         
-        scheduledNotifications.push(identifier);
+        // Store notification data for potential rescheduling
+        await AsyncStorage.setItem(
+          `notification-time-${id}`,
+          triggerTime.toISOString()
+        );
+        await AsyncStorage.setItem(
+          `notification-data-${id}`,
+          JSON.stringify({
+            taskId: task.id,
+            taskTitle: task.title,
+            type: 'task',
+            dueDate: taskDueDate.toISOString()
+          })
+        );
       } catch (error) {
         console.error("Error scheduling notification:", error);
       }
     }
   }
 
-  // Store notification IDs for this task
-  if (scheduledNotifications.length > 0) {
+  // Enhanced sub-goal notifications with similar configuration
+  if (task.subGoals && task.subGoals.length > 0) {
+    for (const subGoal of task.subGoals) {
+      const subGoalDueDate = new Date(subGoal.dueDate);
+      if (subGoalDueDate > now) {
+        const subGoalReminders = [
+          { minutes: 60, title: "Sub-Goal Due in 1 Hour" },
+          { minutes: 30, title: "Sub-Goal Due Soon" },
+          { minutes: 15, title: "⚠️ Sub-Goal Almost Due" },
+          { minutes: 5, title: "🚨 Sub-Goal Final Warning" }
+        ];
+
+        for (const reminder of subGoalReminders) {
+          const reminderTime = new Date(subGoalDueDate.getTime() - reminder.minutes * 60000);
+          if (reminderTime > now) {
+            try {
+              const id = await Notifications.scheduleNotificationAsync({
+                content: {
+                  title: reminder.title,
+                  body: `Sub-goal "${subGoal.title}" of task "${task.title}" is due in ${reminder.minutes} minutes!`,
+                  sound: 'alarm',
+                  priority: Notifications.AndroidNotificationPriority.HIGH,
+                  channelId: 'task-alarms',
+                  icon: '@drawable/notification_icon',
+                  data: { 
+                    taskId: task.id, 
+                    subGoalId: subGoal.id, 
+                    type: 'subgoal',
+                    dueDate: subGoalDueDate.toISOString(),
+                    title: subGoal.title,
+                    parentTitle: task.title
+                  },
+                  android: {
+                    channelId: 'task-alarms',
+                    smallIcon: '@drawable/notification_icon',
+                    priority: Notifications.AndroidNotificationPriority.MAX,
+                    sound: 'alarm',
+                  }
+                },
+                trigger: { 
+                  date: reminderTime,
+                },
+              });
+              scheduledIds.push(id);
+              
+              await AsyncStorage.setItem(
+                `notification-time-${id}`,
+                reminderTime.toISOString()
+              );
+              await AsyncStorage.setItem(
+                `notification-data-${id}`,
+                JSON.stringify({
+                  taskId: task.id,
+                  subGoalId: subGoal.id,
+                  taskTitle: task.title,
+                  subGoalTitle: subGoal.title,
+                  type: 'subgoal',
+                  dueDate: subGoalDueDate.toISOString()
+                })
+              );
+            } catch (error) {
+              console.error("Error scheduling sub-goal notification:", error);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (scheduledIds.length > 0) {
     await AsyncStorage.setItem(
-      `notifications-${taskNotificationId}`, 
-      JSON.stringify(scheduledNotifications)
+      `notifications-${taskNotificationId}`,
+      JSON.stringify(scheduledIds)
     );
     return true;
   }
@@ -103,57 +212,59 @@ export async function scheduleNotification(task) {
   return false;
 }
 
-// Cancel all notifications for a specific task
 async function cancelTaskNotifications(taskNotificationId) {
   try {
     const notificationIds = await AsyncStorage.getItem(`notifications-${taskNotificationId}`);
     
     if (notificationIds) {
       const ids = JSON.parse(notificationIds);
-      
-      // Cancel each scheduled notification
       for (const id of ids) {
         await Notifications.cancelScheduledNotificationAsync(id);
+        await AsyncStorage.removeItem(`notification-time-${id}`);
       }
-      
-      // Remove the stored notification IDs
       await AsyncStorage.removeItem(`notifications-${taskNotificationId}`);
     }
   } catch (error) {
-    console.error("Error canceling task notifications:", error);
+    console.error("Error canceling notifications:", error);
   }
 }
 
-// Format time remaining in a human-readable format
-function formatTimeRemaining(futureDate, currentDate) {
-  const diff = futureDate - currentDate;
-  
-  const seconds = Math.floor(diff / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-  
-  if (days > 0) {
-    return `${days} day${days === 1 ? '' : 's'}`;
-  } else if (hours > 0) {
-    return `${hours} hour${hours === 1 ? '' : 's'}`;
-  } else if (minutes > 0) {
-    return `${minutes} minute${minutes === 1 ? '' : 's'}`;
-  } else {
-    return 'less than a minute';
+// New function to reschedule notifications after device reboot
+export async function rescheduleMissedNotifications() {
+  try {
+    const keys = await AsyncStorage.getAllKeys();
+    const notificationTimeKeys = keys.filter(key => key.startsWith('notification-time-'));
+    
+    const now = new Date();
+    
+    for (const key of notificationTimeKeys) {
+      const scheduledTime = new Date(await AsyncStorage.getItem(key));
+      const notificationId = key.replace('notification-time-', '');
+      
+      // If notification time has passed while device was off, show it immediately
+      if (scheduledTime < now) {
+        const notificationData = await AsyncStorage.getItem(`notification-data-${notificationId}`);
+        if (notificationData) {
+          const data = JSON.parse(notificationData);
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: "Missed Task Reminder",
+              body: `You missed a reminder for task "${data.taskTitle}"`,
+              sound: true,
+              priority: Notifications.AndroidNotificationPriority.HIGH,
+              channelId: 'task-alarms',
+              data: data,
+            },
+            trigger: { seconds: 1 }, // Show immediately
+          });
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Error rescheduling notifications:", error);
   }
 }
 
-// Handle notifications when the app is running
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
-
-// Function to open app settings for the user to enable notifications
 export function openNotificationSettings() {
   if (Platform.OS === 'ios') {
     Linking.openURL('app-settings:');

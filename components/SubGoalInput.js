@@ -12,8 +12,9 @@ import {
   Keyboard
 } from "react-native";
 import DateTimePickerModal from "react-native-modal-datetime-picker";
+import { scheduleNotification } from "../utils/Notifications";
 
-export default function SubGoalInput({ onAddSubGoal }) {
+export default function SubGoalInput({ onAddSubGoal, parentGoal }) {
   const [subGoalText, setSubGoalText] = useState("");
   const [dueDate, setDueDate] = useState(new Date());
   const [showPicker, setShowPicker] = useState(false);
@@ -25,9 +26,28 @@ export default function SubGoalInput({ onAddSubGoal }) {
     }
   };
 
-  const addSubGoalHandler = () => {
+  const addSubGoalHandler = async () => {
     if (!subGoalText.trim()) return;
-    onAddSubGoal({ title: subGoalText, dueDate });
+    
+    const newSubGoal = { 
+      title: subGoalText, 
+      dueDate,
+      id: Date.now().toString(),
+      completed: false
+    };
+    
+    onAddSubGoal(newSubGoal);
+
+    // Schedule notifications for the new sub-goal
+    try {
+      await scheduleNotification({
+        ...parentGoal,
+        subGoals: [newSubGoal]
+      });
+    } catch (error) {
+      console.error("Error scheduling sub-goal notifications:", error);
+    }
+
     setSubGoalText("");
     Keyboard.dismiss();
   };

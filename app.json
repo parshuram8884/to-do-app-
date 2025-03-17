@@ -8,19 +8,19 @@
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/icons.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "userInterfaceStyle": "light"
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/icons.png",
         "backgroundColor": "#ffffff"
-      },
-      "package": "com.mohit229.snackab4af9ad7d8547759d7f00c55fa352a6"
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -34,6 +34,15 @@
       "reactNativeDirectoryCheck": {
         "exclude": ["@react-native-community/checkbox"]
       }
-    }
+    },
+    "widgets": [
+      {
+        "name": "TodoTaskWidget",
+        "description": "Display upcoming tasks and completion stats",
+        "component": "TaskWidget",
+        "homeScreenAvailable": true,
+        "sizes": ["small", "medium"]
+      }
+    ]
   }
 }

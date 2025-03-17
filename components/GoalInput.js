@@ -8,6 +8,7 @@ import {
   TouchableOpacity
 } from "react-native";
 import DateTimePickerModal from "react-native-modal-datetime-picker";
+import { scheduleNotification } from "../utils/Notifications";
 
 export default function GoalInput({ onAddGoal }) {
   const [goalText, setGoalText] = useState("");
@@ -21,14 +22,25 @@ export default function GoalInput({ onAddGoal }) {
     setShowPicker(false);
   };
 
-  const addGoalHandler = () => {
+  const addGoalHandler = async () => {
     if (!goalText.trim()) return;
-    onAddGoal({
-      id: Date.now().toString(), // Unique ID
+    
+    const newGoal = {
+      id: Date.now().toString(),
       title: goalText,
       dueDate,
       completed: false,
-    });
+    };
+
+    onAddGoal(newGoal);
+    
+    // Schedule notifications for the new goal
+    try {
+      await scheduleNotification(newGoal);
+    } catch (error) {
+      console.error("Error scheduling notifications:", error);
+    }
+    
     setGoalText("");
   };
 

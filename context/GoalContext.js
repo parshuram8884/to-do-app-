@@ -1,5 +1,6 @@
 import React, { createContext, useState, useEffect } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { NativeModules } from 'react-native';
 
 export const GoalContext = createContext();
 
@@ -32,6 +33,11 @@ export const GoalProvider = ({ children }) => {
         await AsyncStorage.setItem("goals", JSON.stringify(goals));
         await AsyncStorage.setItem("completedTasks", JSON.stringify(completedTasks));
         await AsyncStorage.setItem("incompleteTasks", JSON.stringify(incompleteTasks));
+        
+        // Update widget after data changes
+        if (NativeModules.TodoWidgetModule) {
+          NativeModules.TodoWidgetModule.updateWidget();
+        }
       } catch (error) {
         console.error("Error saving data to storage:", error);
       }
@@ -197,7 +203,7 @@ export const GoalProvider = ({ children }) => {
         completeGoal,
         getPerformanceStats,
         completeSubGoal,
-        markSubGoalExpired, // Export the new function
+        markSubGoalExpired,
       }}
     >
       {children}
