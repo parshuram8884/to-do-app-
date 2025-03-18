@@ -1,126 +1,164 @@
 import React, { useContext } from 'react';
 import { View, Text, StyleSheet, ScrollView } from "react-native";
 import { GoalContext } from '../context/GoalContext';
+import PerformanceChart from '../components/PerformanceChart';
 
 const Performance = () => {
   const { getPerformanceStats, goals, completedTasks, incompleteTasks } = useContext(GoalContext);
   const stats = getPerformanceStats();
 
-  // Count completed and incomplete subgoals
-  let totalSubGoals = 0;
-  let completedSubGoals = 0;
-  
-  // Count subgoals in active goals
-  goals.forEach(goal => {
-    totalSubGoals += goal.subGoals.length;
-    completedSubGoals += goal.subGoals.filter(sub => sub.completed).length;
-  });
-  
-  // Count subgoals in completed tasks
-  completedTasks.forEach(task => {
-    if (task.subGoals && task.subGoals.length > 0) {
-      totalSubGoals += task.subGoals.length;
-      completedSubGoals += task.subGoals.filter(sub => sub.completed).length;
-    }
-  });
-  
-  // Count subgoals in incomplete tasks
-  incompleteTasks.forEach(task => {
-    if (task.subGoals && task.subGoals.length > 0) {
-      totalSubGoals += task.subGoals.length;
-      completedSubGoals += task.subGoals.filter(sub => sub.completed).length;
-    }
-  });
+  // Calculate time-based statistics
+  const calculateTimeStats = () => {
+    const now = new Date();
+    const timeStats = {
+      onTime: 0,
+      late: 0,
+      atRisk: 0,
+      totalTime: 0,
+      remainingTime: 0,
+      averageCompletion: 0,
+    };
 
-  const incompleteSubGoals = totalSubGoals - completedSubGoals;
-  
-  // Main tasks stats
-  const mainTasksTotal = stats.total;
-  const mainTasksCompleted = stats.completed;
-  const mainTasksIncomplete = stats.incomplete;
-  
-  // Combined stats
-  const totalTasks = mainTasksTotal + totalSubGoals;
-  const completedTasks_all = mainTasksCompleted + completedSubGoals;
-  const incompleteTasks_all = mainTasksIncomplete + incompleteSubGoals;
-  const performance = totalTasks > 0 ? ((completedTasks_all / totalTasks) * 100).toFixed(2) : 0;
-  
-  // Calculate sub-goal completion rate
-  const subGoalPerformance = totalSubGoals > 0 ? ((completedSubGoals / totalSubGoals) * 100).toFixed(2) : 0;
+    // Process active goals
+    goals.forEach(goal => {
+      const startTime = goal.startTime ? new Date(goal.startTime) : new Date();
+      const dueDate = new Date(goal.dueDate);
+      const totalDuration = dueDate - startTime;
+      const timeLeft = dueDate - now;
+      const progress = ((totalDuration - timeLeft) / totalDuration) * 100;
+
+      timeStats.totalTime += totalDuration;
+      timeStats.remainingTime += Math.max(0, timeLeft);
+
+      if (timeLeft < 0) {
+        timeStats.late++;
+      } else if (progress > 75) {
+        timeStats.atRisk++;
+      } else {
+        timeStats.onTime++;
+      }
+
+      // Process sub-goals
+      if (goal.subGoals) {
+        goal.subGoals.forEach(subGoal => {
+          const subStart = subGoal.startTime ? new Date(subGoal.startTime) : startTime;
+          const subDue = new Date(subGoal.dueDate);
+          timeStats.totalTime += subDue - subStart;
+          if (subGoal.completed) {
+            timeStats.averageCompletion++;
+          }
+        });
+      }
+    });
+
+    // Process completed tasks for average completion time
+    completedTasks.forEach(task => {
+      if (task.completedDate) {
+        const startTime = task.startTime ? new Date(task.startTime) : new Date(task.dueDate);
+        const completionTime = new Date(task.completedDate) - startTime;
+        timeStats.averageCompletion += completionTime;
+      }
+    });
+
+    // Calculate average completion time
+    const totalCompleted = completedTasks.length;
+    if (totalCompleted > 0) {
+      timeStats.averageCompletion = timeStats.averageCompletion / totalCompleted;
+    }
+
+    return timeStats;
+  };
+
+  const timeStats = calculateTimeStats();
 
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.title}>Task Performance</Text>
+      <Text style={styles.title}>Task Performance Analytics</Text>
+      
+      <PerformanceChart timeStats={timeStats} goals={[...goals, ...completedTasks]} />
       
       <View style={styles.statsContainer}>
         <View style={styles.statItem}>
-          <Text style={styles.statValue}>{totalTasks}</Text>
+          <Text style={styles.statValue}>{stats.total}</Text>
           <Text style={styles.statLabel}>Total Tasks</Text>
         </View>
         
         <View style={styles.statItem}>
           <Text style={[styles.statValue, styles.completedValue]}>
-            {completedTasks_all}
+            {stats.completed}
           </Text>
           <Text style={styles.statLabel}>Completed</Text>
         </View>
         
         <View style={styles.statItem}>
           <Text style={[styles.statValue, styles.incompleteValue]}>
-            {incompleteTasks_all}
+            {stats.incomplete}
           </Text>
           <Text style={styles.statLabel}>Incomplete</Text>
         </View>
       </View>
       
       <View style={styles.performanceContainer}>
-        <Text style={styles.performanceLabel}>Overall Completion Rate:</Text>
-        <Text style={styles.performanceValue}>{performance}%</Text>
+        <Text style={styles.performanceLabel}>Overall Completion Rate</Text>
+        <Text style={styles.performanceValue}>{stats.performance}%</Text>
         
         <View style={styles.progressBarContainer}>
           <View 
             style={[
               styles.progressBar,
-              { width: `${Math.min(100, Math.max(0, parseFloat(performance)))}%` }
+              { width: `${Math.min(100, Math.max(0, parseFloat(stats.performance)))}%` }
             ]} 
           />
         </View>
       </View>
-      
-      {/* New section for detailed statistics */}
-      <View style={styles.detailedStatsContainer}>
-        <Text style={styles.detailedStatsTitle}>Detailed Statistics</Text>
+
+      <View style={styles.timeAnalyticsContainer}>
+        <Text style={styles.sectionTitle}>Time Analytics</Text>
         
-        <View style={styles.statsRow}>
-          <Text style={styles.statsLabel}>Main Goals:</Text>
-          <Text style={styles.statsValue}>
-            {mainTasksCompleted}/{mainTasksTotal} ({mainTasksTotal > 0 ? ((mainTasksCompleted/mainTasksTotal)*100).toFixed(1) : 0}%)
+        <View style={styles.timeStatsGrid}>
+          <View style={styles.timeStatBox}>
+            <Text style={styles.timeStatValue}>{timeStats.onTime}</Text>
+            <Text style={styles.timeStatLabel}>On Track</Text>
+          </View>
+          
+          <View style={styles.timeStatBox}>
+            <Text style={[styles.timeStatValue, styles.warningText]}>{timeStats.atRisk}</Text>
+            <Text style={styles.timeStatLabel}>At Risk</Text>
+          </View>
+          
+          <View style={styles.timeStatBox}>
+            <Text style={[styles.timeStatValue, styles.errorText]}>{timeStats.late}</Text>
+            <Text style={styles.timeStatLabel}>Overdue</Text>
+          </View>
+        </View>
+
+        <View style={styles.timeAnalyticRow}>
+          <Text style={styles.analyticsLabel}>Average Completion Time:</Text>
+          <Text style={styles.analyticsValue}>
+            {Math.round(timeStats.averageCompletion / (1000 * 60 * 60))}h
           </Text>
         </View>
-        
-        <View style={styles.statsRow}>
-          <Text style={styles.statsLabel}>Sub-Goals:</Text>
-          <Text style={styles.statsValue}>
-            {completedSubGoals}/{totalSubGoals} ({subGoalPerformance}%)
+
+        <View style={styles.timeAnalyticRow}>
+          <Text style={styles.analyticsLabel}>Total Time Allocated:</Text>
+          <Text style={styles.analyticsValue}>
+            {Math.round(timeStats.totalTime / (1000 * 60 * 60))}h
           </Text>
         </View>
-        
-        <View style={styles.progressBarContainer}>
-          <View 
-            style={[
-              styles.progressBar,
-              { width: `${Math.min(100, Math.max(0, parseFloat(subGoalPerformance)))}%` }
-            ]} 
-          />
+
+        <View style={styles.timeAnalyticRow}>
+          <Text style={styles.analyticsLabel}>Remaining Time:</Text>
+          <Text style={styles.analyticsValue}>
+            {Math.round(timeStats.remainingTime / (1000 * 60 * 60))}h
+          </Text>
         </View>
       </View>
-      
+
       <View style={styles.tipsContainer}>
-        <Text style={styles.tipsTitle}>Performance Tips:</Text>
-        <Text style={styles.tipText}>• Break large tasks into smaller sub-goals</Text>
-        <Text style={styles.tipText}>• Set realistic deadlines</Text>
-        <Text style={styles.tipText}>• Complete tasks before they expire</Text>
-        <Text style={styles.tipText}>• Main goals complete automatically when all sub-goals are done</Text>
+        <Text style={styles.tipsTitle}>Performance Insights:</Text>
+        <Text style={styles.tipText}>• {timeStats.atRisk > 0 ? `${timeStats.atRisk} tasks need attention soon` : 'All tasks are on track'}</Text>
+        <Text style={styles.tipText}>• {timeStats.late > 0 ? `${timeStats.late} tasks are overdue` : 'No overdue tasks'}</Text>
+        <Text style={styles.tipText}>• {stats.performance >= 75 ? 'Great progress!' : 'Keep working on your goals'}</Text>
       </View>
     </ScrollView>
   );
@@ -152,10 +190,10 @@ const styles = StyleSheet.create({
     fontWeight: 'bold'
   },
   completedValue: {
-    color: 'green'
+    color: '#4CAF50'
   },
   incompleteValue: {
-    color: 'red'
+    color: '#dc3545'
   },
   statLabel: {
     fontSize: 14,
@@ -188,32 +226,69 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: '#4CAF50'
   },
-  detailedStatsContainer: {
-    backgroundColor: '#f5f5f5',
+  timeAnalyticsContainer: {
+    backgroundColor: '#f8f9fa',
     borderRadius: 8,
     padding: 16,
     marginBottom: 24
   },
-  detailedStatsTitle: {
-    fontSize: 18,
+  sectionTitle: {
+    fontSize: 20,
     fontWeight: '600',
-    marginBottom: 12
+    marginBottom: 16
   },
-  statsRow: {
+  timeStatsGrid: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 8
+    marginBottom: 16
   },
-  statsLabel: {
-    fontSize: 16,
-    color: '#333'
+  timeStatBox: {
+    flex: 1,
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    marginHorizontal: 4,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2
   },
-  statsValue: {
+  timeStatValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#4CAF50'
+  },
+  timeStatLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4
+  },
+  warningText: {
+    color: '#ffc107'
+  },
+  errorText: {
+    color: '#dc3545'
+  },
+  timeAnalyticRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee'
+  },
+  analyticsLabel: {
+    fontSize: 14,
+    color: '#666'
+  },
+  analyticsValue: {
     fontSize: 16,
     fontWeight: '500'
   },
   tipsContainer: {
-    backgroundColor: '#f0f8ff',
+    backgroundColor: '#e8f5e9',
     borderRadius: 8,
     padding: 16,
     marginBottom: 16
@@ -221,12 +296,13 @@ const styles = StyleSheet.create({
   tipsTitle: {
     fontSize: 18,
     fontWeight: '600',
-    marginBottom: 12
+    marginBottom: 12,
+    color: '#2e7d32'
   },
   tipText: {
     fontSize: 14,
     marginBottom: 8,
-    color: '#333'
+    color: '#1b5e20'
   }
 });
 

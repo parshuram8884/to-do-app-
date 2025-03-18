@@ -9,7 +9,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   TouchableWithoutFeedback,
-  Keyboard
+  Keyboard,
+  Alert
 } from "react-native";
 import DateTimePickerModal from "react-native-modal-datetime-picker";
 import { scheduleNotification } from "../utils/Notifications";
@@ -17,22 +18,75 @@ import { scheduleNotification } from "../utils/Notifications";
 export default function SubGoalInput({ onAddSubGoal, parentGoal }) {
   const [subGoalText, setSubGoalText] = useState("");
   const [dueDate, setDueDate] = useState(new Date());
-  const [showPicker, setShowPicker] = useState(false);
+  const [startTime, setStartTime] = useState(new Date());
+  const [showDuePicker, setShowDuePicker] = useState(false);
+  const [showStartPicker, setShowStartPicker] = useState(false);
 
-  const handleConfirm = (selectedDate) => {
-    setShowPicker(false);
+  const handleStartConfirm = (selectedDate) => {
     if (selectedDate) {
+      // Validate start time is within parent goal's timeframe
+      const parentStart = parentGoal.startTime ? new Date(parentGoal.startTime) : new Date();
+      const parentDue = new Date(parentGoal.dueDate);
+      
+      if (selectedDate < parentStart || selectedDate >= parentDue) {
+        Alert.alert(
+          "Invalid Start Time",
+          "Sub-goal must start after parent goal's start time and before its due date",
+          [{ text: "OK" }]
+        );
+        return;
+      }
+      
+      if (selectedDate >= dueDate) {
+        Alert.alert(
+          "Invalid Start Time",
+          "Start time must be before due date",
+          [{ text: "OK" }]
+        );
+        return;
+      }
+      
+      setStartTime(selectedDate);
+    }
+    setShowStartPicker(false);
+  };
+
+  const handleDueConfirm = (selectedDate) => {
+    if (selectedDate) {
+      // Validate due date is within parent goal's timeframe
+      const parentDue = new Date(parentGoal.dueDate);
+      
+      if (selectedDate > parentDue) {
+        Alert.alert(
+          "Invalid Due Date",
+          "Sub-goal must be due before parent goal",
+          [{ text: "OK" }]
+        );
+        return;
+      }
+      
+      if (selectedDate <= startTime) {
+        Alert.alert(
+          "Invalid Due Date",
+          "Due date must be after start time",
+          [{ text: "OK" }]
+        );
+        return;
+      }
+      
       setDueDate(selectedDate);
     }
+    setShowDuePicker(false);
   };
 
   const addSubGoalHandler = async () => {
     if (!subGoalText.trim()) return;
     
     const newSubGoal = { 
-      title: subGoalText, 
-      dueDate,
       id: Date.now().toString(),
+      title: subGoalText, 
+      startTime,
+      dueDate,
       completed: false
     };
     
@@ -66,15 +120,32 @@ export default function SubGoalInput({ onAddSubGoal, parentGoal }) {
             onChangeText={setSubGoalText}
           />
           
-          <TouchableOpacity onPress={() => setShowPicker(true)}>
+          <TouchableOpacity 
+            onPress={() => setShowStartPicker(true)}
+            style={styles.dateButton}
+          >
+            <Text style={styles.dateText}>Start: {startTime.toLocaleString()}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            onPress={() => setShowDuePicker(true)}
+            style={styles.dateButton}
+          >
             <Text style={styles.dateText}>Due: {dueDate.toLocaleString()}</Text>
           </TouchableOpacity>
 
           <DateTimePickerModal
-            isVisible={showPicker}
+            isVisible={showStartPicker}
             mode="datetime"
-            onConfirm={handleConfirm}
-            onCancel={() => setShowPicker(false)}
+            onConfirm={handleStartConfirm}
+            onCancel={() => setShowStartPicker(false)}
+          />
+
+          <DateTimePickerModal
+            isVisible={showDuePicker}
+            mode="datetime"
+            onConfirm={handleDueConfirm}
+            onCancel={() => setShowDuePicker(false)}
           />
 
           <Button title="Add Sub-Goal" onPress={addSubGoalHandler} />
@@ -96,12 +167,18 @@ const styles = StyleSheet.create({
     borderWidth: 1, 
     padding: 8, 
     marginBottom: 10,
-    backgroundColor: 'white' 
+    backgroundColor: 'white',
+    borderRadius: 4
+  },
+  dateButton: {
+    backgroundColor: '#f0f0f0',
+    borderRadius: 4,
+    marginBottom: 10,
+    padding: 8
   },
   dateText: { 
     fontSize: 16, 
     color: "blue", 
-    textAlign: "center", 
-    marginBottom: 10 
+    textAlign: "center"
   }
 });

@@ -52,6 +52,48 @@ export async function checkPermissionsOnStart() {
   return status === "granted";
 }
 
+// Calculate time intervals based on total duration
+function calculateTimeIntervals(startTime, dueDate) {
+  const totalDuration = dueDate - startTime;
+  const now = new Date();
+  const timeLeft = dueDate - now;
+  const percentageComplete = ((totalDuration - timeLeft) / totalDuration) * 100;
+  
+  // Define notification thresholds at key percentages
+  return [
+    { percent: 0, title: "Started", body: "Task has started" },
+    { percent: 25, title: "25% Time Passed", body: "Quarter of time has passed" },
+    { percent: 50, title: "Halfway Point", body: "Half of allocated time has passed" },
+    { percent: 75, title: "75% Time Passed", body: "Only 25% of time remains" },
+    { percent: 85, title: "Urgent", body: "Task is becoming urgent" },
+    { percent: 90, title: "Very Urgent", body: "Task needs immediate attention" },
+    { percent: 95, title: "Critical", body: "Task is critically due soon" },
+    { percent: 100, title: "Due Now", body: "Task is due now" }
+  ];
+}
+
+function adjustNotificationTime(date) {
+  const adjustedDate = new Date(date);
+  const hours = adjustedDate.getHours();
+  const day = adjustedDate.getDay();
+
+  // Don't send notifications between 10 PM and 8 AM
+  if (hours >= 22 || hours < 8) {
+    adjustedDate.setHours(8);
+    adjustedDate.setMinutes(0);
+    adjustedDate.setDate(adjustedDate.getDate() + (hours >= 22 ? 1 : 0));
+  }
+
+  // If it falls on weekend, move to Monday 8 AM
+  if (day === 0 || day === 6) {
+    adjustedDate.setDate(adjustedDate.getDate() + (day === 0 ? 1 : 2));
+    adjustedDate.setHours(8);
+    adjustedDate.setMinutes(0);
+  }
+
+  return adjustedDate;
+}
+
 export async function scheduleNotification(task) {
   const notificationsAllowed = await AsyncStorage.getItem("notificationsAllowed");
   if (notificationsAllowed !== "true") {
@@ -61,34 +103,29 @@ export async function scheduleNotification(task) {
 
   const taskDueDate = new Date(task.dueDate);
   const now = new Date();
+  const startTime = task.startTime ? new Date(task.startTime) : now;
 
   if (taskDueDate <= now) return false;
 
-  const timeDifference = taskDueDate - now;
   const taskNotificationId = `task-${task.id}`;
-  
   await cancelTaskNotifications(taskNotificationId);
 
-  const intervals = [
-    { percent: 0.25, title: "Task Reminder", body: `"${task.title}" is due in 75% of time` },
-    { percent: 0.5, title: "Task Reminder", body: `"${task.title}" is due in 50% of time` },
-    { percent: 0.75, title: "Task Reminder", body: `"${task.title}" is due in 25% of time` },
-    { percent: 0.85, title: "Task Almost Due", body: `"${task.title}" is due in 15% of time remaining` },
-    { percent: 0.95, title: "Task Due Very Soon!", body: `"${task.title}" is due in 5% of time remaining!` },
-    { percent: 1.0, title: "⚠️ Task Due Now!", body: `"${task.title}" is due now!` }
-  ];
-
+  const intervals = calculateTimeIntervals(startTime, taskDueDate);
   const scheduledIds = [];
 
+  // Schedule notifications for main goal
+  const totalDuration = taskDueDate - startTime;
   for (const interval of intervals) {
-    const triggerTime = new Date(now.getTime() + timeDifference * interval.percent);
+    const triggerTime = new Date(startTime.getTime() + (totalDuration * (interval.percent / 100)));
+    const adjustedTriggerTime = adjustNotificationTime(triggerTime);
     
-    if (triggerTime > now) {
+    if (adjustedTriggerTime > now) {
       try {
+        const timeLeftPercent = Math.round(((taskDueDate - adjustedTriggerTime) / totalDuration) * 100);
         const id = await Notifications.scheduleNotificationAsync({
           content: {
-            title: interval.title,
-            body: interval.body,
+            title: `${interval.title} - ${task.title}`,
+            body: `${interval.body} - ${timeLeftPercent}% time remaining (Adjusted for your schedule)`,
             sound: 'alarm',
             priority: Notifications.AndroidNotificationPriority.HIGH,
             channelId: 'task-alarms',
@@ -97,7 +134,9 @@ export async function scheduleNotification(task) {
               taskId: task.id, 
               type: 'task', 
               dueDate: taskDueDate.toISOString(),
-              title: task.title
+              title: task.title,
+              percentComplete: interval.percent,
+              timeLeftPercent
             },
             android: {
               channelId: 'task-alarms',
@@ -106,16 +145,13 @@ export async function scheduleNotification(task) {
               sound: 'alarm',
             }
           },
-          trigger: { 
-            date: triggerTime,
-          },
+          trigger: { date: adjustedTriggerTime },
         });
         scheduledIds.push(id);
         
-        // Store notification data for potential rescheduling
         await AsyncStorage.setItem(
           `notification-time-${id}`,
-          triggerTime.toISOString()
+          adjustedTriggerTime.toISOString()
         );
         await AsyncStorage.setItem(
           `notification-data-${id}`,
@@ -123,7 +159,8 @@ export async function scheduleNotification(task) {
             taskId: task.id,
             taskTitle: task.title,
             type: 'task',
-            dueDate: taskDueDate.toISOString()
+            dueDate: taskDueDate.toISOString(),
+            percentComplete: interval.percent
           })
         );
       } catch (error) {
@@ -132,37 +169,40 @@ export async function scheduleNotification(task) {
     }
   }
 
-  // Enhanced sub-goal notifications with similar configuration
+  // Schedule notifications for sub-goals
   if (task.subGoals && task.subGoals.length > 0) {
     for (const subGoal of task.subGoals) {
       const subGoalDueDate = new Date(subGoal.dueDate);
+      const subGoalStartTime = subGoal.startTime ? new Date(subGoal.startTime) : now;
+      
       if (subGoalDueDate > now) {
-        const subGoalReminders = [
-          { minutes: 60, title: "Sub-Goal Due in 1 Hour" },
-          { minutes: 30, title: "Sub-Goal Due Soon" },
-          { minutes: 15, title: "⚠️ Sub-Goal Almost Due" },
-          { minutes: 5, title: "🚨 Sub-Goal Final Warning" }
-        ];
+        const subGoalIntervals = calculateTimeIntervals(subGoalStartTime, subGoalDueDate);
+        const subGoalDuration = subGoalDueDate - subGoalStartTime;
 
-        for (const reminder of subGoalReminders) {
-          const reminderTime = new Date(subGoalDueDate.getTime() - reminder.minutes * 60000);
-          if (reminderTime > now) {
+        for (const interval of subGoalIntervals) {
+          const triggerTime = new Date(subGoalStartTime.getTime() + (subGoalDuration * (interval.percent / 100)));
+          const adjustedTriggerTime = adjustNotificationTime(triggerTime);
+          
+          if (adjustedTriggerTime > now) {
             try {
+              const timeLeftPercent = Math.round(((subGoalDueDate - adjustedTriggerTime) / subGoalDuration) * 100);
               const id = await Notifications.scheduleNotificationAsync({
                 content: {
-                  title: reminder.title,
-                  body: `Sub-goal "${subGoal.title}" of task "${task.title}" is due in ${reminder.minutes} minutes!`,
+                  title: `Sub-Goal: ${interval.title}`,
+                  body: `Sub-goal "${subGoal.title}" of "${task.title}" - ${timeLeftPercent}% time remaining (Adjusted for your schedule)`,
                   sound: 'alarm',
                   priority: Notifications.AndroidNotificationPriority.HIGH,
                   channelId: 'task-alarms',
                   icon: '@drawable/notification_icon',
                   data: { 
                     taskId: task.id, 
-                    subGoalId: subGoal.id, 
+                    subGoalId: subGoal.id,
                     type: 'subgoal',
                     dueDate: subGoalDueDate.toISOString(),
                     title: subGoal.title,
-                    parentTitle: task.title
+                    parentTitle: task.title,
+                    percentComplete: interval.percent,
+                    timeLeftPercent
                   },
                   android: {
                     channelId: 'task-alarms',
@@ -171,15 +211,13 @@ export async function scheduleNotification(task) {
                     sound: 'alarm',
                   }
                 },
-                trigger: { 
-                  date: reminderTime,
-                },
+                trigger: { date: adjustedTriggerTime },
               });
               scheduledIds.push(id);
               
               await AsyncStorage.setItem(
                 `notification-time-${id}`,
-                reminderTime.toISOString()
+                adjustedTriggerTime.toISOString()
               );
               await AsyncStorage.setItem(
                 `notification-data-${id}`,
@@ -189,7 +227,8 @@ export async function scheduleNotification(task) {
                   taskTitle: task.title,
                   subGoalTitle: subGoal.title,
                   type: 'subgoal',
-                  dueDate: subGoalDueDate.toISOString()
+                  dueDate: subGoalDueDate.toISOString(),
+                  percentComplete: interval.percent
                 })
               );
             } catch (error) {

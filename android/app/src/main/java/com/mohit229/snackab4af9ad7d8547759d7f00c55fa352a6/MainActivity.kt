@@ -4,6 +4,7 @@ import android.os.Build
 import android.os.Bundle
 import android.content.IntentFilter
 import android.content.Intent
+import android.content.BroadcastReceiver
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
@@ -13,7 +14,7 @@ import com.facebook.react.defaults.DefaultReactActivityDelegate
 import expo.modules.ReactActivityDelegateWrapper
 
 class MainActivity : ReactActivity() {
-  private val notificationReceiver = NotificationAlarmReceiver()
+  private var receiver: BroadcastReceiver? = null
   
   override fun onCreate(savedInstanceState: Bundle?) {
     // Set the theme to AppTheme BEFORE onCreate to support
@@ -23,21 +24,22 @@ class MainActivity : ReactActivity() {
     super.onCreate(null)
     
     // Register for boot completed and package replaced events
-    val intentFilter = IntentFilter().apply {
+    val filter = IntentFilter().apply {
       addAction(Intent.ACTION_BOOT_COMPLETED)
-      addAction(Intent.ACTION_MY_PACKAGE_REPLACED)
-      addAction(Intent.ACTION_QUICKBOOT_POWERON)
+      addAction("android.intent.action.QUICKBOOT_POWERON") // Use string constant instead
+      addAction("com.htc.intent.action.QUICKBOOT_POWERON")
       addAction("com.mohit229.snackab4af9ad7d8547759d7f00c55fa352a6.NOTIFICATION_ALARM")
     }
-    registerReceiver(notificationReceiver, intentFilter)
+    
+    receiver = NotificationAlarmReceiver().also {
+      registerReceiver(it, filter)
+    }
   }
 
   override fun onDestroy() {
     super.onDestroy()
-    try {
-      unregisterReceiver(notificationReceiver)
-    } catch (e: Exception) {
-      // Receiver might already be unregistered
+    receiver?.let {
+      unregisterReceiver(it)
     }
   }
 

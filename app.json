@@ -14,13 +14,17 @@
     },
     "ios": {
       "supportsTablet": true,
-      "userInterfaceStyle": "light"
+      "userInterfaceStyle": "light",
+      "runtimeVersion": {
+        "policy": "appVersion"
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/icons.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "runtimeVersion": "1.0.0"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -32,7 +36,9 @@
     },
     "doctor": {
       "reactNativeDirectoryCheck": {
-        "exclude": ["@react-native-community/checkbox"]
+        "exclude": [
+          "@react-native-community/checkbox"
+        ]
       }
     },
     "widgets": [
@@ -41,8 +47,14 @@
         "description": "Display upcoming tasks and completion stats",
         "component": "TaskWidget",
         "homeScreenAvailable": true,
-        "sizes": ["small", "medium"]
+        "sizes": [
+          "small",
+          "medium"
+        ]
       }
-    ]
+    ],
+    "updates": {
+      "url": "https://u.expo.dev/07551ee2-51d6-45bb-9688-d18692c39b56"
+    }
   }
 }

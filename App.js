@@ -6,11 +6,13 @@ import { StatusBar } from "react-native";
 
 export default function App() {
   return (
-    <GoalProvider>
-      <NavigationContainer>
-        <StatusBar />
-        <MainNavigator />
-      </NavigationContainer>
-    </GoalProvider>
+
+      <GoalProvider>
+        <NavigationContainer>
+          <StatusBar />
+          <MainNavigator />
+        </NavigationContainer>
+      </GoalProvider>
+
   );
 }
